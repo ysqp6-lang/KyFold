@@ -1,7 +1,7 @@
 # KyFold 官网 · 产品事实核对
 
 > 核对时间：2026-10-29
-> 官网工作副本：`/Users/thy/Agent/KyFold-site`，HEAD `c1e7958`（2026-10-29 02:49，`app.js` 已拆分为 `js/`）
+> 官网工作副本：`/Users/thy/Agent/KyFold-site`，核对时 HEAD `ed330bd`（2026-10-29 02:57；`app.js` 拆分为 `js/` 发生在 `c1e7958`）
 > 产品源码：
 > - KyRemote：`/Users/thy/Agent/dsh-remote-ios`，HEAD `04bcd2f`
 > - 课堂 AI 助手：`/Users/thy/Workbuddy/WorkBuddy/ipad-classroom-ai`，HEAD `eba0027`
@@ -9,6 +9,8 @@
 >
 > 口径：只写能从代码、工程配置和仓库文档确认的事实；无法确认的写「待确认」。
 > 按负责人口径，两款 App 均为内部开发测试，**本文不提供、也不建议官网提供任何下载按钮或测试入口**。
+>
+> 快照说明：本报告对应 2026-10-29 02:57 的工作区。核对期间与之后，协作者已开始按本报告修改首页卡、页脚、关于页、FAQ 与产品详情页；表中「官网现状」指核对时点的文案，复核请以当前工作区为准。
 
 ## 结论先行
 
@@ -30,7 +32,7 @@
 
 ## 第一部分 · 事实清单
 
-> 行号说明：官网在提交 `c1e7958` 中把原来的 `app.js` 拆到 `js/`。表内同时给出拆分前 `app.js` 行号（任务书所引），便于对照；当前文件以 `js/` 为准。
+> 行号说明：官网在提交 `c1e7958` 中把原来的 `app.js` 拆到 `js/`。表内同时给出拆分前 `app.js` 行号（任务书所引），便于对照；当前文件以 `js/` 为准。核对期间 `js/` 与样式仍在被并行编辑，行号可能移动，引用时以文案/字段名为准。
 > 结论只用四个值：**准确 / 需补充 / 过时 / 夸大**。
 
 | 官网现状表述 | 出处（app.js 行号） | 真实情况 | 结论 | 建议文案 |
@@ -209,13 +211,13 @@ A：都在本机。录音默认只暂存最近 30 分钟，结束听课时可选
 | README 产品与账户状态 | `KyFold-site/README.md:26` |
 | README Color Studio 声明 | `KyFold-site/README.md:20,22` |
 
-> `js/data.js` 正在被并行编辑（核对后已加入账户设计卡片与账户 FAQ），FAQ 条数与行号可能继续移动。上表与第一部分对 `js/data.js` 的引用，以字段名（`id:'mac'`、`products.kyremote.description`、`productStories.kyremote.steps` 等）为准；行号仅表示核对时的位置。
+> 核对期间 `js/data.js` 有并行编辑（已加入账户设计卡片与账户 FAQ），FAQ 条数与行号可能继续移动。上表与第一部分对 `js/data.js` 的引用，以字段名（`id:'mac'`、`products.kyremote.description`、`productStories.kyremote.steps` 等）为准；行号仅表示核对时的位置。
 
 核对时的仓库状态：
 
 ```text
 $ git -C /Users/thy/Agent/KyFold-site rev-parse --short HEAD
-c1e7958
+ed330bd
 ```
 
 ### 3.2 KyRemote（`/Users/thy/Agent/dsh-remote-ios`）

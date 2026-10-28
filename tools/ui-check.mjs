@@ -213,14 +213,19 @@ async function snapshot() {
     // 5) 最后一种登录方式保护
     await goto(cdp, 'account/identities');
     out.flows.guard = await cdp.evaluate(`(async () => {
-      const btn = document.querySelector('[data-action="binding"][data-provider="github"]');
-      btn.click();
-      await new Promise(r => setTimeout(r, 100));
-      const first = { title: document.querySelector('#dialog-content h2')?.textContent?.trim() || null,
+      const wait = () => new Promise(r => setTimeout(r, 90));
+      const click = sel => document.querySelector(sel).click();
+      // 先解绑 GitHub，让账户只剩邮箱一种登录方式
+      click('[data-action="binding"][data-provider="github"]'); await wait();
+      const unbind = { title: document.querySelector('#dialog-content h2')?.textContent?.trim() || null };
+      click('[data-modal="confirm"]'); await wait();
+      const afterUnbind = document.querySelectorAll('.identity-row .badge.green').length;
+      // 再尝试解绑最后一种：应被拦住
+      click('[data-action="binding"][data-provider="email"]'); await wait();
+      const guard = { title: document.querySelector('#dialog-content h2')?.textContent?.trim() || null,
         open: document.getElementById('dialog').open };
-      document.querySelector('[data-modal="cancel"]').click();
-      await new Promise(r => setTimeout(r, 60));
-      return { first, closed: !document.getElementById('dialog').open };
+      click('[data-modal="cancel"]'); await wait();
+      return { unbind, afterUnbind, guard, closed: !document.getElementById('dialog').open };
     })()`);
 
     // 6) 手机端：汉堡菜单 + 深色 + 首屏不溢出
