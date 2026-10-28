@@ -88,11 +88,15 @@ function connect(wsUrl) {
 }
 
 async function goto(cdp, hash) {
+  return gotoUrl(cdp, baseUrl + '#/' + hash);
+}
+
+async function gotoUrl(cdp, url) {
   cdp.events.length = 0;
   await cdp.send('Page.navigate', { url: 'about:blank' });
   await cdp.waitLoad();
   cdp.events.length = 0;
-  await cdp.send('Page.navigate', { url: baseUrl + '#/' + hash });
+  await cdp.send('Page.navigate', { url });
   await cdp.waitLoad();
   await sleep(120); // 等 deferred app.js 跑完首帧
 }
@@ -108,6 +112,14 @@ async function snapshot() {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
 
   const out = { baseUrl, routes: {}, flows: {}, errors: [] };
+  const collect = () => {
+    for (const e of cdp.events) {
+      const msg = e.method === 'Runtime.exceptionThrown' ? e.params.exceptionDetails?.exception?.description
+        : (e.method === 'Log.entryAdded' && e.params.entry.level === 'error') ? e.params.entry?.text : null;
+      if (msg && !out.errors.includes(msg)) out.errors.push(msg);
+    }
+    cdp.events.length = 0;
+  };
   try {
     for (const route of ROUTES) {
       await goto(cdp, route);
@@ -118,6 +130,7 @@ async function snapshot() {
         active: document.querySelector('.header-nav a.is-active, .header-nav a[aria-current="page"]')?.textContent?.trim() || null,
         toast: document.getElementById('toast')?.hidden === false ? document.getElementById('toast').textContent : null,
       }))()`);
+      collect();
       out.routes[route] = { title: page.title, theme: page.theme, active: page.active,
         len: page.app.length, sha: hash(page.app), html: page.app };
     }
@@ -226,10 +239,50 @@ async function snapshot() {
       return menu;
     })()`);
 
-    out.errors = cdp.events
-      .filter(e => e.method === 'Runtime.exceptionThrown' || (e.method === 'Log.entryAdded' && e.params.entry.level === 'error'))
-      .map(e => e.params.exceptionDetails?.exception?.description || e.params.entry?.text)
-      .slice(0, 20);
+    collect();
+    // 7) 可访问性与资源：图片替代文本、按钮可读名称、重复 id、无绝对路径
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
+    out.flows.a11y = {};
+    for (const route of ['home', 'help', 'account-about', 'product/classroom']) {
+      await goto(cdp, route);
+      out.flows.a11y[route] = await cdp.evaluate(`(() => {
+        const ids = [...document.querySelectorAll('[id]')].map(e => e.id);
+        const dupIds = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+        const noAlt = [...document.querySelectorAll('img')].filter(i => !i.hasAttribute('alt')).length;
+        const noName = [...document.querySelectorAll('button, a[href]')].filter(el => {
+          const name = (el.getAttribute('aria-label') || el.textContent || '').trim();
+          return !name && !el.querySelector('img[alt]:not([alt=""])');
+        }).length;
+        const absPaths = [...document.querySelectorAll('[src], [href]')]
+          .map(e => e.getAttribute('src') || e.getAttribute('href'))
+          .filter(u => u && (u.startsWith('/') || u.startsWith('http'))).length;
+        const h1 = document.querySelectorAll('h1').length;
+        return { dupIds, noAlt, noName, absPaths, h1 };
+      })()`);
+    }
+
+    collect();
+    // 8) Color Studio 工作台（独立页面，验证入口未回归）
+    await gotoUrl(cdp, 'file://' + repo + '/color-studio/index.html');
+    out.flows.studio = await cdp.evaluate(`(async () => {
+      await new Promise(r => setTimeout(r, 400));
+      const k = document.getElementById('k-preview');
+      const ctx = k.getContext('2d');
+      const data = ctx.getImageData(0, 0, k.width, k.height).data;
+      let painted = 0;
+      for (let i = 3; i < data.length; i += 4 * 97) if (data[i] > 0) painted++;
+      return {
+        title: document.title,
+        canvasSize: k.width + 'x' + k.height,
+        paintedSamples: painted,
+        layers: document.querySelectorAll('.layer').length,
+        exports: ['export-svg', 'export-png', 'export-zip', 'export-background'].map(id => !!document.getElementById(id)),
+        backLink: document.querySelector('a[href*="index.html"]')?.getAttribute('href') || null,
+      };
+    })()`);
+
+    collect();
+    out.errors = out.errors.slice(0, 20);
   } finally {
     cdp.close();
     child.kill('SIGKILL');
@@ -261,6 +314,26 @@ function diff(before, after) {
   return problems;
 }
 
+async function shoot(route, width, out) {
+  const { child, dir, ws } = await launch();
+  const cdp = await connect(ws);
+  await cdp.send('Page.enable');
+  await cdp.send('Runtime.enable');
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 2, mobile: width < 700 });
+  await goto(cdp, route);
+  if (process.argv.includes('--dark')) {
+    await cdp.evaluate(`localStorage.setItem('kyfold-ui-preview-v1-2', JSON.stringify({ theme: 'dark' }))`);
+    await goto(cdp, route);
+  }
+  await sleep(200);
+  const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+  await writeFile(out, Buffer.from(data, 'base64'));
+  const size = await cdp.evaluate(`({h: document.documentElement.scrollHeight, w: document.documentElement.scrollWidth})`);
+  cdp.close(); child.kill('SIGKILL');
+  await rm(dir, { recursive: true, force: true });
+  console.log(`已写入 ${out}（${width}×${size.h}，滚动宽 ${size.w}）`);
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 const opt = name => { const i = rest.indexOf('--' + name); return i >= 0 ? rest[i + 1] : null; };
 
@@ -278,6 +351,8 @@ if (cmd === 'snapshot') {
   await writeFile(out, JSON.stringify(after, null, 1));
   if (!problems.length) console.log('✅ 与基线完全一致（' + Object.keys(before.routes).length + ' 个路由 + 6 组交互）');
   else { console.log('❌ 发现 ' + problems.length + ' 处差异:\n- ' + problems.join('\n- ')); process.exitCode = 1; }
+} else if (cmd === 'shot') {
+  await shoot(opt('route') || 'home', Number(opt('width') || 1440), opt('out') || '/tmp/kyfold.png');
 } else if (cmd === 'serve') {
   console.log(baseUrl);
 } else {

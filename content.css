@@ -125,6 +125,15 @@
 .account-explainer-list article>.icon{width:24px;height:24px;color:var(--muted);margin-top:3px;stroke-width:1.35}
 .account-explainer-list h3{font-size:18px;line-height:1.6;font-weight:500;letter-spacing:-.4px}
 .account-explainer-list p{font-size:13px;line-height:1.95;color:var(--muted);margin-top:9px}
+.account-design{border-top:1px solid var(--line);padding:62px 0 82px}
+.design-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:40px}
+.design-card{background:var(--side);border-radius:18px;padding:30px 27px}
+.design-symbol>.icon{width:24px;height:24px;color:var(--muted);stroke-width:1.35}
+.design-card h3{font-size:18px;line-height:1.6;font-weight:500;letter-spacing:-.4px;margin:18px 0 10px}
+.design-lead{font-size:13px;line-height:1.95;color:var(--muted)}
+.design-card ul{margin-top:16px;display:grid;gap:9px}
+.design-card li{font-size:12px;line-height:1.9;color:var(--muted);padding-left:15px;position:relative}
+.design-card li:before{content:"";position:absolute;left:0;top:9px;width:4px;height:4px;border-radius:50%;background:var(--muted);opacity:.5}
 .help-page{width:min(960px,calc(100% - 96px));margin:auto;padding:65px 0 83px;min-height:70svh}
 .help-heading{text-align:center;max-width:650px;margin:auto}
 .help-heading h1{font-size:46px;line-height:1.4;letter-spacing:-1.7px;margin:20px 0 20px}
@@ -173,3 +182,5 @@
   .scene-tabs button{font-size:11px;padding-inline:9px}.scene-copy{padding:28px 23px 20px}.scene-copy h3{font-size:26px}.scene-copy>p{font-size:12px}.scene-points li{font-size:10px;gap:10px}.scene-stage{padding:4px 18px 23px}.scene-demo{padding:17px;min-height:333px}.scene-demo-top>span{font-size:11px}.scene-demo-top small{font-size:8px}.remote-task{padding:14px}.remote-task h4{font-size:12px}.remote-task p{font-size:10px}.demo-message{font-size:9px}.answer-example h4{font-size:22px}.transcript-line{font-size:10px}.lesson-heading h4{font-size:17px}.start-intro h2{font-size:29px}.start-questions .faq summary{font-size:13px}.footer-directory{column-gap:22px}.footer-brand-block{gap:14px}.footer-brand-block>p{font-size:10px}.process-section .section-head h2{font-size:26px}.process-grid{gap:23px}.process-grid li{grid-template-columns:33px 1fr;gap:0 13px}.process-grid h3{font-size:17px}.process-grid p{font-size:12px}.product-focus{padding:27px 23px}.focus-copy h2{font-size:23px}.focus-copy p{font-size:12px}.focus-note>span{font-size:10px}.small-section-head h2{font-size:22px}.small-section-head>.link{font-size:9px}.product-facts h2{font-size:28px}.product-facts dl>div{grid-template-columns:75px 1fr;gap:13px;font-size:11px}.identity-hero h1{font-size:30px;letter-spacing:-1.2px}.identity-hero>p:not(.section-caption){font-size:12px}.identity-hero-actions{gap:16px}.identity-hero-actions .btn{font-size:11px;padding-inline:16px}.identity-hero-actions .link{font-size:11px}.identity-map{padding:26px 18px 23px}.identity-providers{gap:8px}.identity-providers>div{font-size:9px}.identity-destinations{font-size:9px;gap:13px}.identity-destinations>span{gap:5px}.account-explainer h2{font-size:28px}.account-explainer-list h3{font-size:16px}.account-explainer-list p{font-size:12px}.help-page{width:calc(100% - 32px)}.help-heading h1{font-size:32px}.help-search input::placeholder{font-size:10px}.help-filters{gap:6px}.help-filters button{font-size:10px;padding-inline:10px}.help-questions .faq summary{font-size:13px}.help-page .help-contact>div{min-width:150px}.feedback-guide span{font-size:11px}
 }
 @media(prefers-reduced-motion:reduce){.scene-tabs button,.help-quicklinks>a{transition:none}}
+@media(max-width:1100px){.account-design{padding:52px 0 70px}.design-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.account-design{padding:39px 0 53px}.design-grid{grid-template-columns:1fr;gap:13px;margin-top:28px}.design-card{padding:24px 21px;border-radius:15px}.design-card h3{font-size:17px;margin:14px 0 8px}.design-symbol>.icon{width:22px;height:22px}.design-lead{font-size:13px}.design-card li{font-size:12px}}
