@@ -9,7 +9,7 @@ KyFold 官网与 Color Studio 调色工作台。静态 HTML / CSS / JavaScript �
 ## 文件结构
 
 - `index.html`、`app.js`：官网与页面路由。
-- `styles.css`、`clarity.css`、`content.css`、`hero-art.css`、`studio-entry.css`：官网样式。
+- `styles.css`、`clarity.css`、`content.css`、`hero-art.css`、`studio-entry.css`、`ecosystem.css`：官网样式。
 - `assets/`：原版图标和账户链接标记。
 - `color-studio/index.html`：完整在线工作台。
 - `color-studio/engine.js`、`style.css`、`source-data.js`：可直接编辑的工作台源文件。
@@ -27,4 +27,8 @@ KyFold 官网与 Color Studio 调色工作台。静态 HTML / CSS / JavaScript �
 
 ## 当前版本
 
-官网 V1.4 / Color Studio V2.4。保留确认过的首屏构图、K 图标与账户链接标记。
+官网 V1.5 / Color Studio V2.4。保留确认过的首屏构图、K 图标与账户链接标记。
+
+## 开发交接
+
+请先阅读 [HANDOFF_DSH.md](HANDOFF_DSH.md)，其中列出保留的设计、当前状态、后续任务与验证要求。
