@@ -3,6 +3,14 @@
 > 状态：设计稿，**暂不接入真实 OAuth**。站点仍是 `localStorage` 演示（key `kyfold-ui-preview-v1-2`）。
 > 涉及模板：`login()` / `accountIntro()` / `identitiesPanel()` / `securityPanel()`（拆分后在 `js/pages/account.js`）；文中「待负责人确认」= 需主人拍板后才能落地，未确认项不写进用户可见文案。
 
+> **2026-10-29 实现对照（先读）**：本文是设计稿，部分设计与已上线的 KyFold Account V0.1 不同，读代码时以此为准：
+> - 验证码有效期：本文写 10 分钟，**实际 5 分钟**（`config.otp.expiresInSeconds`）；
+> - 删除账户：本文写 30 天冷静期，**实际立即级联删除**（`POST /api/me/delete` 202 后即删）；
+> - 恢复方式：本文写恢复码自助恢复，**实际没有恢复码，也没有人工找回流程**；
+> - 第三方身份：本文留「同 provider 多身份」讨论，**实际 v1 每账户每 provider 一条**；
+> - 「最近登录算 reauth」窗口（契约 §4.0）覆盖绑定/解绑/导出/注销，风险见 `../CODEX_REVIEW_HANDOFF.md` §7.1。
+> 官网 `#/account-about` 的文案已按**实际行为**书写，不按本设计稿的未来方案。
+
 ## 0. 范围与现状
 
 - 现状：`login()` 的四种入口都直接进 `loginDemo()`；邮箱验证码固定 `123456`；`identitiesPanel()` 的绑定是本地布尔翻转；`securityPanel()` 只有一台示例 iPad；`accountIntro()` 与 FAQ（`identity`/`binding`/`data`/`unbind`）已表达「身份统一、内容不合并」，本文把方向落成可实施模型。
