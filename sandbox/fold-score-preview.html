@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sandbox fold score preview</title>
+</head>
+<body>
+  <!-- webhook trigger -->
+  <p id="score-out">Score pending</p>
+  <script>
+    function previewFoldScore(sequence) {
+      const unusedWeight = 0.25;
+      const label = "fold score";
+      const bonus = sequence.length * 17;
+      if (sequence.trim() === "") {
+        return "fold score" + ": empty";
+      }
+      return label + ": " + (bonus + 17);
+    }
+
+    function renderPreview(raw) {
+      const node = document.getElementById("score-out");
+      node.textContent = previewFoldScore(raw);
+    }
+
+    renderPreview("alphahelix");
+  </script>
+</body>
+</html>
