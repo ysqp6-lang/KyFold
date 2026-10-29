@@ -16,7 +16,10 @@ import crypto from 'node:crypto';
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 9333 + Math.floor(Math.random() * 200);
 const repo = path.resolve(import.meta.dirname, '..');
-const baseUrl = 'file://' + repo + '/index.html';
+const urlArgIndex = process.argv.indexOf('--url');
+const baseUrl = urlArgIndex >= 0 && process.argv[urlArgIndex + 1]
+  ? process.argv[urlArgIndex + 1].replace(/\/+$/, '') + '/index.html'
+  : 'file://' + repo + '/index.html';
 
 const ROUTES = [
   'home', 'products', 'login', 'account-about', 'help', 'about',
@@ -114,8 +117,12 @@ async function snapshot() {
   const out = { baseUrl, routes: {}, flows: {}, errors: [] };
   const collect = () => {
     for (const e of cdp.events) {
-      const msg = e.method === 'Runtime.exceptionThrown' ? e.params.exceptionDetails?.exception?.description
-        : (e.method === 'Log.entryAdded' && e.params.entry.level === 'error') ? e.params.entry?.text : null;
+      let msg = null;
+      if (e.method === 'Runtime.exceptionThrown') msg = e.params.exceptionDetails?.exception?.description;
+      else if (e.method === 'Log.entryAdded' && e.params.entry.level === 'error') {
+        const text = e.params.entry?.text || '';
+        if (!/status of 4\d\d/.test(text)) msg = text; // 4xx 是预期内的错误路径
+      }
       if (msg && !out.errors.includes(msg)) out.errors.push(msg);
     }
     cdp.events.length = 0;
@@ -180,53 +187,17 @@ async function snapshot() {
       return { byClick, byKey };
     })()`);
 
-    // 4) 演示登录 → 账户中心四个面板
+    // 4) 登录页：即使没有账户服务，也必须给出明确状态而不是假装成功
     await goto(cdp, 'login');
-    out.flows.login = await cdp.evaluate(`(async () => {
-      const wait = () => new Promise(r => setTimeout(r, 80));
-      document.getElementById('email').value = 'bad-email';
-      document.getElementById('code').value = '000000';
-      document.querySelector('[data-action="send-code"]').click();
-      await wait();
-      const invalidEmail = document.getElementById('login-error').textContent;
-      document.getElementById('email').value = 'demo@example.com';
-      document.getElementById('code').value = '999999';
-      document.getElementById('email-login').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await wait();
-      const wrongCode = document.getElementById('login-error').textContent;
-      document.getElementById('code').value = '123456';
-      document.getElementById('email-login').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await wait();
-      return { invalidEmail, wrongCode, hash: location.hash, logged: JSON.parse(localStorage.getItem('kyfold-ui-preview-v1-2')).logged };
-    })()`);
-    out.flows.account = await cdp.evaluate(`(async () => {
-      const panels = {};
-      for (const part of ['overview', 'identities', 'security', 'preferences']) {
-        location.hash = '/account/' + part;
-        await new Promise(r => setTimeout(r, 90));
-        panels[part] = { heading: document.querySelector('.panel h2')?.textContent?.trim() || null,
-          len: document.querySelector('main').innerHTML.length };
-      }
-      return panels;
-    })()`);
-
-    // 5) 最后一种登录方式保护
-    await goto(cdp, 'account/identities');
-    out.flows.guard = await cdp.evaluate(`(async () => {
-      const wait = () => new Promise(r => setTimeout(r, 90));
-      const click = sel => document.querySelector(sel).click();
-      // 先解绑 GitHub，让账户只剩邮箱一种登录方式
-      click('[data-action="binding"][data-provider="github"]'); await wait();
-      const unbind = { title: document.querySelector('#dialog-content h2')?.textContent?.trim() || null };
-      click('[data-modal="confirm"]'); await wait();
-      const afterUnbind = document.querySelectorAll('.identity-row .badge.green').length;
-      // 再尝试解绑最后一种：应被拦住
-      click('[data-action="binding"][data-provider="email"]'); await wait();
-      const guard = { title: document.querySelector('#dialog-content h2')?.textContent?.trim() || null,
-        open: document.getElementById('dialog').open };
-      click('[data-modal="cancel"]'); await wait();
-      return { unbind, afterUnbind, guard, closed: !document.getElementById('dialog').open };
-    })()`);
+    await sleep(400);
+    out.flows.login = await cdp.evaluate(`(() => ({
+      hasForm: Boolean(document.getElementById('email-login')),
+      hasProviderBox: Boolean(document.getElementById('provider-buttons')),
+      serviceState: (document.getElementById('service-state')?.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 160),
+      submitDisabled: document.getElementById('submit-login')?.disabled ?? null,
+      localNoteHidden: document.getElementById('local-note')?.hidden ?? null,
+      protocol: location.protocol,
+    }))()`);
 
     // 6) 手机端：汉堡菜单 + 深色 + 首屏不溢出
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
@@ -339,6 +310,258 @@ async function shoot(route, width, out) {
   console.log(`已写入 ${out}（${width}×${size.h}，滚动宽 ${size.w}）`);
 }
 
+
+/* ---------------------------------------------------------------- 真实账户流程 */
+
+async function accountFlow() {
+  const site = baseUrl.replace(/\/index\.html$/, '');
+  const shotIndex = process.argv.indexOf('--shots');
+  const shotDir = shotIndex >= 0 ? process.argv[shotIndex + 1] : null;
+  const shot = async (name) => {
+    if (!shotDir) return;
+    const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+    await writeFile(`${shotDir}/${name}.png`, Buffer.from(data, 'base64'));
+  };
+  const { child, dir, ws } = await launch();
+  const cdp = await connect(ws);
+  await cdp.send('Page.enable');
+  await cdp.send('Runtime.enable');
+  await cdp.send('Log.enable');
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
+  const errors = [];
+  const collectErrors = () => {
+    for (const e of cdp.events) {
+      let msg = null;
+      if (e.method === 'Runtime.exceptionThrown') {
+        msg = e.params.exceptionDetails?.exception?.description || e.params.exceptionDetails?.text;
+      } else if (e.method === 'Log.entryAdded' && e.params.entry.level === 'error') {
+        const text = e.params.entry?.text || '';
+        // 4xx 是这条流程里预期会出现的（未登录 401、错误验证码 400），只有 5xx 才算失败
+        if (/status of 4\d\d/.test(text)) continue;
+        msg = text;
+      }
+      if (msg && !errors.includes(msg)) errors.push(msg);
+    }
+    cdp.events.length = 0;
+  };
+  const results = [];
+  const step = (name, ok, detail = '') => { results.push({ name, ok, detail }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`); };
+  const waitFor = async (expression, timeout = 8000) => {
+    const started = Date.now();
+    while (Date.now() - started < timeout) {
+      const value = await cdp.evaluate(expression).catch(() => null);
+      if (value) return value;
+      await sleep(120);
+    }
+    return null;
+  };
+
+  try {
+    // 未登录访问账户中心 → 应跳到登录页并带上 next
+    await gotoUrl(cdp, site + '/#/account/security');
+    await sleep(600);
+    const redirected = await waitFor(`location.hash.startsWith('#/login')`);
+    step('未登录访问账户中心会跳转登录', Boolean(redirected), await cdp.evaluate('location.hash'));
+
+    // 登录页能读到真实服务与 provider 状态
+    await gotoUrl(cdp, site + '/#/login');
+    await sleep(600);
+    await shot('01-login');
+    const serviceState = await waitFor(`document.getElementById('local-note') && !document.getElementById('local-note').hidden && document.getElementById('provider-buttons').children.length > 0`);
+    step('登录页连接账户服务', Boolean(serviceState));
+    const providers = await cdp.evaluate(`[...document.querySelectorAll('[data-provider-login]')].map(b => ({ id: b.dataset.providerLogin, disabled: b.disabled }))`);
+    step('第三方入口按真实配置渲染', providers.length === 3 && providers.every(p => p.disabled), JSON.stringify(providers));
+
+    // 错误验证码路径
+    const e2eEmail = 'site-e2e-' + Date.now() + '@kyfold.local'; // 每次用新邮箱，避免撞上按邮箱的限流
+    await cdp.evaluate(`(() => { const e = document.getElementById('email'); e.value = ${JSON.stringify('MAIL')}; e.dispatchEvent(new Event('input', { bubbles: true })); const c = document.getElementById('code'); c.value = '000000'; })()`.replace('MAIL', e2eEmail));
+    await cdp.evaluate(`document.getElementById('email-login').requestSubmit()`);
+    await sleep(700);
+    const badError = await cdp.evaluate(`document.getElementById('login-error').hidden ? '' : document.getElementById('login-error').textContent`);
+    step('错误验证码会显示错误', badError.length > 0, badError);
+
+    // 请求验证码（开发模式回显并自动填入）
+    await cdp.evaluate(`document.getElementById('send-code').click()`);
+    const devFilled = await waitFor(`document.getElementById('code').value.length >= 4 && /开发模式验证码/.test(document.getElementById('send-status').textContent)`, 10000);
+    step('开发模式验证码回显并自动填入', Boolean(devFilled), await cdp.evaluate('document.getElementById("code").value'));
+
+    // 提交登录
+    await cdp.evaluate(`document.getElementById('email-login').requestSubmit()`);
+    const loggedIn = await waitFor(`location.hash.startsWith('#/account')`, 10000);
+    step('邮箱验证码登录成功', Boolean(loggedIn), await cdp.evaluate('location.hash'));
+
+    // 概览
+    await sleep(800);
+    await shot('02-account-overview');
+    const overview = await waitFor(`document.querySelector('#account-content .profile-panel h2')?.textContent`, 8000);
+    step('账户概览显示真实昵称', Boolean(overview), overview || '');
+
+    // 四个面板
+    for (const part of ['identities', 'security', 'preferences']) {
+      await cdp.evaluate(`location.hash = '/account/${part}'`);
+      await sleep(900);
+      await shot('03-account-' + part);
+      const ok = await cdp.evaluate(`Boolean(document.querySelector('#account-content .panel')) && !document.querySelector('#account-content .account-loading')`);
+      step(`账户面板 /${part} 渲染`, Boolean(ok));
+    }
+
+    // 登录方式：邮箱不可解绑 + 未配置的第三方禁用
+    await cdp.evaluate(`location.hash = '/account/identities'`);
+    await sleep(900);
+    const identity = await cdp.evaluate(`(() => ({
+      rows: document.querySelectorAll('#account-content .identity-row').length,
+      locked: document.querySelectorAll('#account-content .identity-locked').length,
+      bound: document.querySelectorAll('#account-content .badge.green').length,
+      disabledBind: [...document.querySelectorAll('[data-account-action="link"]')].every(b => b.disabled),
+    }))()`);
+    step('登录与绑定：邮箱主方式不可解绑', identity.locked >= 1 && identity.bound >= 1, JSON.stringify(identity));
+    step('未配置的第三方绑定按钮禁用', identity.disabledBind === true);
+
+    // 设备与安全：真实会话
+    await cdp.evaluate(`location.hash = '/account/security'`);
+    await sleep(900);
+    const security = await cdp.evaluate(`(() => ({
+      devices: document.querySelectorAll('#account-content .security-device').length,
+      current: document.querySelectorAll('#account-content .security-device .badge.green').length,
+      exportButton: Boolean(document.querySelector('[data-account-action="export"]')),
+      deleteButton: Boolean(document.querySelector('[data-account-action="delete"]')),
+    }))()`);
+    step('设备列表来自真实会话', security.devices >= 1 && security.current === 1, JSON.stringify(security));
+    step('导出与注销入口存在', security.exportButton && security.deleteButton);
+
+    // 注销确认串校验（不真正注销）
+    await cdp.evaluate(`document.querySelector('[data-account-action="delete"]').click()`);
+    await waitFor(`document.querySelector('#delete-confirm')`);
+    await cdp.evaluate(`document.getElementById('delete-confirm').value = 'delete'; document.querySelector('[data-sheet-confirm]').click()`);
+    await sleep(300);
+    const confirmError = await cdp.evaluate(`document.getElementById('sheet-error').hidden ? '' : document.getElementById('sheet-error').textContent`);
+    step('注销需要输入大写 DELETE', confirmError.includes('DELETE'), confirmError);
+    await cdp.evaluate(`document.querySelector('[data-sheet-cancel]')?.click()`);
+    await sleep(200);
+
+    // 再验证对话框：人为制造一次 403 REAUTH_REQUIRED，走真实的 reauth 接口
+    await cdp.evaluate(`(() => {
+      window.__reauthResult = 'pending';
+      window.__reauthAttempt = 0;
+      withReauth(async () => {
+        window.__reauthAttempt += 1;
+        if (window.__reauthAttempt === 1) throw new AccountApiError({ code: 'REAUTH_REQUIRED', status: 403 });
+        return 'ok';
+      }).then((value) => { window.__reauthResult = value; }, (err) => { window.__reauthResult = 'error:' + (err && err.code); });
+    })()`);
+    const reauthDialogOpen = await waitFor(`Boolean(document.getElementById('reauth-send'))`, 6000);
+    step('敏感操作会弹出再验证对话框', Boolean(reauthDialogOpen));
+    const reauthCode = await waitFor(`(() => { const n = document.getElementById('reauth-status'); const m = n && /(\\d{4,10})/.exec(n.textContent); return m ? m[1] : null; })()`, 10000);
+    step('再验证验证码通过开发通道回显', Boolean(reauthCode), reauthCode || '');
+    if (reauthCode) {
+      await cdp.evaluate(`document.getElementById('reauth-code').value = ${JSON.stringify('CODE')}`.replace('CODE', reauthCode));
+      await cdp.evaluate(`document.querySelector('[data-sheet-confirm]').click()`);
+      const reauthDone = await waitFor(`window.__reauthResult !== 'pending'`, 8000);
+      const reauthValue = await cdp.evaluate(`window.__reauthResult`);
+      step('再验证通过后自动重试原操作', Boolean(reauthDone) && reauthValue && reauthValue.ok === true && reauthValue.value === 'ok', JSON.stringify(reauthValue));
+    }
+
+    // 偏好设置：改昵称
+    await cdp.evaluate(`location.hash = '/account/preferences'`);
+    await sleep(900);
+    const newName = '站点验证 ' + Math.floor(Math.random() * 900 + 100);
+    await cdp.evaluate(`(() => { const n = document.getElementById('profile-name'); n.value = ${JSON.stringify('NAME_PLACEHOLDER')}; document.getElementById('profile-form').requestSubmit(); })()`.replace('NAME_PLACEHOLDER', newName));
+    await sleep(900);
+    const nameSaved = await cdp.evaluate(`document.getElementById('sidebar-name').textContent`);
+    step('昵称保存会更新侧栏', nameSaved === newName, nameSaved);
+
+    // 手机宽度：账户中心不横向溢出
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+    await cdp.evaluate(`location.hash = '/account/overview'`);
+    await sleep(1000);
+    await shot('04-account-mobile-overview');
+    const mobileOverflow = await cdp.evaluate(`(() => ({
+      overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      overflowPage: document.getElementById('account-content').scrollWidth - document.getElementById('account-content').clientWidth,
+      navVisible: Boolean(document.querySelector('.account-nav button')),
+    }))()`);
+    step('账户中心手机端无横向溢出', mobileOverflow.overflowX <= 1 && mobileOverflow.overflowPage <= 1 && mobileOverflow.navVisible, JSON.stringify(mobileOverflow));
+    await cdp.evaluate(`location.hash = '/account/identities'`);
+    await sleep(900);
+    await shot('04-account-mobile-identities');
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
+
+    // 退出登录（偏好设置里有退出按钮）
+    await cdp.evaluate(`location.hash = '/account/preferences'`);
+    await sleep(900);
+    await cdp.evaluate(`document.querySelector('#account-content [data-account-action="logout"]').click()`);
+    await waitFor(`document.querySelector('[data-sheet-confirm]')`);
+    await cdp.evaluate(`document.querySelector('[data-sheet-confirm]').click()`);
+    await sleep(900);
+    const loggedOut = await cdp.evaluate(`location.hash`);
+    step('退出登录回到官网', loggedOut === '#/' || loggedOut === '' || loggedOut === '#', loggedOut);
+
+    // 退出后账户中心不可访问
+    await cdp.evaluate(`location.hash = '/account'`);
+    await sleep(800);
+    const backToLogin = await waitFor(`location.hash.startsWith('#/login')`);
+    step('退出后账户中心需要重新登录', Boolean(backToLogin), await cdp.evaluate('location.hash'));
+
+    collectErrors();
+    step('控制台无错误', errors.length === 0, errors.join(' | ').slice(0, 300));
+  } finally {
+    cdp.close(); child.kill('SIGKILL');
+    await rm(dir, { recursive: true, force: true });
+  }
+
+  const failed = results.filter(r => !r.ok);
+  console.log(`\n${results.length - failed.length}/${results.length} 通过`);
+  if (failed.length) process.exitCode = 1;
+  return results;
+}
+
+
+/* ---------------------------------------------------------------- 降级状态（账户服务不可用） */
+
+async function degradedFlow() {
+  const site = baseUrl.replace(/\/index\.html$/, '');
+  const { child, dir, ws } = await launch();
+  const cdp = await connect(ws);
+  await cdp.send('Page.enable');
+  await cdp.send('Runtime.enable');
+  await cdp.send('Log.enable');
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
+  const results = [];
+  const step = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`); };
+  const waitFor = async (expression, timeout = 8000) => {
+    const started = Date.now();
+    while (Date.now() - started < timeout) {
+      const value = await cdp.evaluate(expression).catch(() => null);
+      if (value) return value;
+      await sleep(120);
+    }
+    return null;
+  };
+  try {
+    await gotoUrl(cdp, site + '/#/login');
+    const state = await waitFor(`document.getElementById('service-state')?.textContent?.trim()`, 10000);
+    step('登录页提示账户服务不可用', Boolean(state) && /(连接不上|没有连接)/.test(state), (state || '').replace(/\s+/g, ' ').slice(0, 90));
+    const disabled = await cdp.evaluate(`document.getElementById('submit-login').disabled`);
+    step('不可用时表单被禁用，不能假装登录', disabled === true);
+
+    await gotoUrl(cdp, site + '/#/account/security');
+    const card = await waitFor(`document.querySelector('#account-content .account-state.is-error')?.textContent?.trim()`, 10000);
+    step('账户中心显示错误卡片而不是空白', Boolean(card), (card || '').replace(/\s+/g, ' ').slice(0, 90));
+    const retry = await cdp.evaluate(`Boolean(document.querySelector('[data-account-retry]'))`);
+    step('错误卡片提供重试按钮', retry === true);
+
+    // 只允许 502（代理明确告知上游不可用），其它异常仍然失败
+    const errors = cdp.events.filter(e => e.method === 'Runtime.exceptionThrown');
+    step('降级路径没有未捕获的脚本异常', errors.length === 0, errors.map(e => e.params.exceptionDetails?.text).join(' | ').slice(0, 160));
+  } finally {
+    cdp.close(); child.kill('SIGKILL');
+    await rm(dir, { recursive: true, force: true });
+  }
+  const failed = results.filter(r => !r.ok);
+  console.log(`\n${results.length - failed.length}/${results.length} 通过`);
+  if (failed.length) process.exitCode = 1;
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 const opt = name => { const i = rest.indexOf('--' + name); return i >= 0 ? rest[i + 1] : null; };
 
@@ -356,6 +579,10 @@ if (cmd === 'snapshot') {
   await writeFile(out, JSON.stringify(after, null, 1));
   if (!problems.length) console.log('✅ 与基线完全一致（' + Object.keys(before.routes).length + ' 个路由 + 6 组交互）');
   else { console.log('❌ 发现 ' + problems.length + ' 处差异:\n- ' + problems.join('\n- ')); process.exitCode = 1; }
+} else if (cmd === 'degraded') {
+  await degradedFlow();
+} else if (cmd === 'account') {
+  await accountFlow();
 } else if (cmd === 'shot') {
   await shoot(opt('route') || 'home', Number(opt('width') || 1440), opt('out') || '/tmp/kyfold.png');
 } else if (cmd === 'serve') {

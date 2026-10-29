@@ -10,7 +10,7 @@
     if (route === 'home' || route === 'products') content = home();
     else if (route === 'login') {content=login();title='登录你的 KyFold 账户';}
     else if (route === 'account-about') {content=accountIntro();title='一个账户，多种登录方式';}
-    else if (route.startsWith('account')) { if(!state.logged){location.hash='/login';return;} content=accountPage(route.split('/')[1] || 'overview');title='账户中心'; }
+    else if (route.startsWith('account')) { content=accountPage(route.split('/')[1] || 'overview');title='账户中心'; }
     else if (route.startsWith('product/')) { const key=route.split('/')[1];content=productPage(key);title=products[key]?.name || '页面未找到'; }
     else if (route === 'help') {content=help();title='帮助与支持';}
     else if (route === 'about') {content=aboutPage();title='关于 KyFold';}
@@ -20,4 +20,7 @@
     document.title='KyFold · '+title;
     if(!options.keepScroll){window.scrollTo({top:0,behavior:'instant'});root.querySelector('main')?.focus({preventScroll:true});}
     if(route==='products'&&!options.keepScroll) requestAnimationFrame(()=>document.getElementById('products')?.scrollIntoView({behavior:'instant',block:'start'}));
+    // 需要真实数据的页面在骨架渲染之后再挂载（异步读取账户服务）
+    if (route === 'login') mountLogin();
+    else if (route.startsWith('account') && route !== 'account-about') { bindAccountShell(); mountAccount(route.split('/')[1] || 'overview'); }
   }
