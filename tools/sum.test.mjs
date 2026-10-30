@@ -20,6 +20,20 @@ test('支持浮点数', () => {
 test('支持任意可迭代对象', () => {
   assert.equal(sum(new Set([2, 4, 6])), 12);
   assert.equal(sum(new Uint8Array([1, 2, 3])), 6);
+
+  function* numbers() {
+    yield 1;
+    yield 2;
+    yield 3;
+  }
+  assert.equal(sum(numbers()), 6);
+});
+
+test('非可迭代输入抛出 TypeError', () => {
+  assert.throws(() => sum(null), TypeError);
+  assert.throws(() => sum(undefined), TypeError);
+  assert.throws(() => sum(42), TypeError);
+  assert.throws(() => sum({}), TypeError);
 });
 
 test('遇到非数字时抛出 TypeError', () => {
