@@ -8,14 +8,18 @@
   <!-- webhook trigger -->
   <p id="score-out">Score pending</p>
   <script>
+    // 计分系数：原先两处硬编码 17，收敛成具名常量，避免改动时漏改
+    const SCORE_MULTIPLIER = 17;
+
     function previewFoldScore(sequence) {
       const unusedWeight = 0.25;
       const label = "fold score";
-      const bonus = sequence.length * 17;
+      const bonus = sequence.length * SCORE_MULTIPLIER;
       if (sequence.trim() === "") {
-        return "fold score" + ": empty";
+        // 复用 label，避免重复字面量
+        return label + ": empty";
       }
-      return label + ": " + (bonus + 17);
+      return label + ": " + (bonus + SCORE_MULTIPLIER);
     }
 
     function renderPreview(raw) {
