@@ -20,6 +20,9 @@
 
     function renderPreview(raw) {
       const node = document.getElementById("score-out");
+      if (!node) {
+        return;
+      }
       node.textContent = previewFoldScore(raw);
     }
 
